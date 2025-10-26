@@ -1,0 +1,17 @@
+# Backend
+bin/
+obj/
+*.user
+*.suo
+*.swp
+
+# Frontend
+node_modules/
+dist/
+.vite/
+
+# Env
+.env
+.env.*
+.DS_Store
+Thumbs.db

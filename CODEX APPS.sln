@@ -1,0 +1,29 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.5.2.0
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "anamnese-app", "anamnese-app", "{7905BB80-8424-7E82-47AE-68D75D6D8EBE}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Anamnese.Api", "anamnese-app\backend\Anamnese.Api.csproj", "{ADB2DB6C-05D0-358E-5356-1EDDB1EA3E57}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{ADB2DB6C-05D0-358E-5356-1EDDB1EA3E57}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{ADB2DB6C-05D0-358E-5356-1EDDB1EA3E57}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{ADB2DB6C-05D0-358E-5356-1EDDB1EA3E57}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{ADB2DB6C-05D0-358E-5356-1EDDB1EA3E57}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{ADB2DB6C-05D0-358E-5356-1EDDB1EA3E57} = {7905BB80-8424-7E82-47AE-68D75D6D8EBE}
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {001358F9-7062-4121-9627-745BC9956772}
+	EndGlobalSection
+EndGlobal
