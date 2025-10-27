@@ -18,7 +18,7 @@ builder.Services.AddCors(options =>
 builder.Services.AddDbContext<AppDbContext>(options =>
 {
     var cs = builder.Configuration.GetConnectionString("Default")
-             ?? "Host=localhost;Port=5432;Database=anamnese;Username=postgres;Password=postgres;";
+             ?? "Host=hpserver;Port=5432;Database=mbGestordb;Username=postgres;Password=2308;";
     options.UseNpgsql(cs);
 });
 
@@ -29,10 +29,17 @@ using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     var useMigrations = app.Configuration.GetValue<bool>("UseMigrations");
-    if (useMigrations)
-        db.Database.Migrate();
-    else
-        db.Database.EnsureCreated();
+    try
+    {
+        if (useMigrations)
+            db.Database.Migrate();
+        else
+            db.Database.EnsureCreated();
+    }
+    catch (Exception ex)
+    {
+        app.Logger.LogError(ex, "Database initialization failed. The app will still start.");
+    }
 }
 
 if (app.Environment.IsDevelopment())
@@ -46,6 +53,21 @@ app.UseCors();
 var api = app.MapGroup("/api");
 
 api.MapGet("/healthz", () => Results.Ok(new { status = "ok" }));
+
+// Database connectivity health
+api.MapGet("/healthz/db", async (AppDbContext db) =>
+{
+    try
+    {
+        await db.Database.OpenConnectionAsync();
+        await db.Database.CloseConnectionAsync();
+        return Results.Ok(new { ok = true });
+    }
+    catch (Exception ex)
+    {
+        return Results.Problem(ex.Message, statusCode: 500);
+    }
+});
 
 // Create intake (client + anamnesis + signature)
 api.MapPost("/intakes", async (CreateIntakeRequest req, AppDbContext db) =>
