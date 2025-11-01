@@ -21,13 +21,14 @@ Aplicativo web para gestão de fichas de anamnese, com preenchimento digital e c
 ## Banco de Dados (Docker)
 1. Suba o Postgres local:
    - `docker compose -f anamnese-app/docker-compose.yml up -d`
-2. Connection string padrão (dev):
-   - `Host=localhost;Port=5432;Database=anamnese;Username=postgres;Password=postgres;`
+2. Connection string (definida em appsettings.json) pode omitir senha. No Windows defina a senha via variável de ambiente:
+   - `setx DB_PASSWORD "sua_senha_aqui"`
+   - A string base atual para produção está em `anamnese-app/backend/appsettings.json:2` e usa `Host=HPSERVER;Port=5432;Database=MBGestorDB;Username=anamnese_app;`
 
 Se for usar Supabase, substitua a connection string em `anamnese-app/backend/appsettings.json:1` e garanta `sslmode=require` se necessário.
 
 ## Backend (.NET)
-1. Ajuste a connection string em `anamnese-app/backend/appsettings.json:1` se quiser.
+1. Ajuste a connection string base em `anamnese-app/backend/appsettings.json:1` se quiser. A senha é lida de `DB_PASSWORD` caso não esteja presente na string.
 2. Rode a API:
    - `cd anamnese-app/backend`
    - `dotnet restore`

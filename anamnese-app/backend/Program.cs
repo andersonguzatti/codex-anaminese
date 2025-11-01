@@ -18,7 +18,15 @@ builder.Services.AddCors(options =>
 builder.Services.AddDbContext<AppDbContext>(options =>
 {
     var cs = builder.Configuration.GetConnectionString("Default")
-             ?? "Host=hpserver;Port=5432;Database=mbGestordb;Username=postgres;Password=2308;";
+             ?? "Host=HPSERVER;Port=5432;Database=MBGestorDB;Username=anamnese_app;";
+
+    if (!cs.Contains("Password=", StringComparison.OrdinalIgnoreCase))
+    {
+        var pwd = builder.Configuration["DB_PASSWORD"];
+        if (!string.IsNullOrWhiteSpace(pwd))
+            cs = cs.TrimEnd(';') + $";Password={pwd};";
+    }
+
     options.UseNpgsql(cs);
 });
 
