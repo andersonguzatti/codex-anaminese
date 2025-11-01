@@ -1,24 +1,10 @@
-import { useEffect, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { useTranslation } from 'react-i18next'
-import MaskedDateInput from '../components/MaskedDateInput'
+import { useRef, useState } from 'react'
 import SignatureCanvas from '../components/SignatureCanvas'
 import { createIntake, type AnamnesisInput, type ClientInput } from '../lib/api'
 
-function toDateOnlyMasked(value: string | undefined, lang: string) {
+function toDateOnly(value: string | undefined) {
   if (!value) return null
-  const v = String(value).trim()
-  const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(v)
-  if (!m) return null
-  const [_, a, b, y] = m
-  const isPt = (lang || '').toLowerCase().startsWith('pt')
-  // pt-BR: DD/MM/YYYY ; en-US: MM/DD/YYYY
-  const dd = isPt ? a : b
-  const mm = isPt ? b : a
-  const day = Number(dd)
-  const mon = Number(mm)
-  if (day < 1 || day > 31 || mon < 1 || mon > 12) return null
-  return `${y}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}`
+  return value
 }
 
 function getBool(fd: FormData, name: string) {
@@ -26,14 +12,10 @@ function getBool(fd: FormData, name: string) {
 }
 
 export default function NewIntakePage() {
-  const { i18n } = useTranslation()
   const [loading, setLoading] = useState(false)
   const [signature, setSignature] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [successId, setSuccessId] = useState<string | null>(null)
-  const [countdown, setCountdown] = useState<number>(7)
-  const navigate = useNavigate()
-  useAutoRedirect(successId, countdown, setCountdown, (to: string) => navigate(to))
 
   const formRef = useRef<HTMLFormElement>(null)
 
@@ -45,7 +27,7 @@ export default function NewIntakePage() {
 
     const client: ClientInput = {
       fullName: String(fd.get('fullName') || '').trim(),
-      birthDate: toDateOnlyMasked(fd.get('birthDate') as string | undefined, i18n.language),
+      birthDate: toDateOnly(fd.get('birthDate') as string | undefined),
       sex: (fd.get('sex') as string) || null,
       maritalStatus: (fd.get('maritalStatus') as string) || null,
       addressStreet: (fd.get('addressStreet') as string) || null,
@@ -69,7 +51,7 @@ export default function NewIntakePage() {
     }
 
     const anamnesis: AnamnesisInput = {
-      formDate: toDateOnlyMasked(fd.get('formDate') as string | undefined, i18n.language),
+      formDate: toDateOnly(fd.get('formDate') as string | undefined),
       areaToBeRemoved: (fd.get('areaToBeRemoved') as string) || null,
 
       hasAllergies: getBool(fd, 'hasAllergies'),
@@ -134,7 +116,6 @@ export default function NewIntakePage() {
       setLoading(true)
       const res = await createIntake({ client, anamnesis, signatureDataUrl: signature })
       setSuccessId(res.anamnesisId)
-      setCountdown(7)
       formRef.current?.reset()
       setSignature(null)
     } catch (err: any) {
@@ -157,23 +138,14 @@ export default function NewIntakePage() {
 
   return (
     <div className="bg-white shadow-sm rounded-lg p-4 sm:p-6">
-      <h2 className="text-lg font-semibold mb-4">{i18n.t('form.title')}</h2>
+      <h2 className="text-lg font-semibold mb-4">Ficha de Anamnese</h2>
 
       {error && (
         <div className="mb-4 rounded bg-red-50 text-red-700 px-3 py-2 text-sm">{error}</div>
       )}
       {successId && (
-        <div className="mb-4 rounded bg-green-50 text-green-700 px-3 py-2 text-sm flex items-center justify-between">
-          <div>
-            {i18n.t('success.created', { id: successId ?? '' })}
-            <span className="ml-2 text-green-800/80">{i18n.t('success.redirect', { count: countdown })}</span>
-          </div>
-          <button
-            className="ml-3 px-2 py-1 text-xs rounded border border-green-300 hover:bg-green-100"
-            onClick={() => navigate(`/anamnese/${successId}`)}
-          >
-            {i18n.t('success.viewNow')}
-          </button>
+        <div className="mb-4 rounded bg-green-50 text-green-700 px-3 py-2 text-sm">
+          Ficha criada com sucesso! ID: {successId}
         </div>
       )}
 
@@ -187,7 +159,7 @@ export default function NewIntakePage() {
             </div>
             <div>
               <label className={labelClass}>Data de Nascimento</label>
-              <MaskedDateInput name="birthDate" className={fieldClass} lang={i18n.language} />
+              <input name="birthDate" type="date" className={fieldClass} />
             </div>
             <div>
               <label className={labelClass}>Sexo</label>
@@ -244,7 +216,7 @@ export default function NewIntakePage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className={labelClass}>Data da Ficha</label>
-              <MaskedDateInput name="formDate" className={fieldClass} lang={i18n.language} />
+              <input name="formDate" type="date" className={fieldClass} />
             </div>
           </div>
         </section>
@@ -378,29 +350,4 @@ export default function NewIntakePage() {
       </form>
     </div>
   )
-}
-
-// Auto redirect effect after success
-import type React from 'react'
-export function useAutoRedirect(
-  successId: string | null,
-  countdown: number,
-  setCountdown: React.Dispatch<React.SetStateAction<number>>,
-  navigate: (to: string) => void,
-) {
-  useEffect(() => {
-    if (!successId) return
-    setCountdown(countdown)
-    const interval = setInterval(() => {
-      setCountdown((prev) => {
-        if (prev <= 1) {
-          clearInterval(interval)
-          navigate(`/anamnese/${successId}`)
-          return 0
-        }
-        return prev - 1
-      })
-    }, 1000)
-    return () => clearInterval(interval)
-  }, [successId])
 }

@@ -1,13 +1,29 @@
+using Anamnese.Api;
 using Anamnese.Api.Data;
 using Anamnese.Api.DTOs;
 using Anamnese.Api.Models;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Localization;
+using Microsoft.Extensions.Localization;
+using System.Globalization;
+using Microsoft.AspNetCore.Routing;
+using Anamnese.Api.Services;
+using Microsoft.OpenApi.Models;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+builder.Services.AddSwaggerGen(c =>
+{
+    c.SwaggerDoc("v1", new OpenApiInfo
+    {
+        Title = "Anamnese API",
+        Version = "v1",
+        Description = "Endpoints de Anamnese, Usuários, Perfis e Gestão de Acessos"
+    });
+});
+builder.Services.AddLocalization(options => options.ResourcesPath = "Resources");
 
 builder.Services.AddCors(options =>
 {
@@ -50,17 +66,36 @@ using (var scope = app.Services.CreateScope())
     }
 }
 
-if (app.Environment.IsDevelopment())
-{
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
+// Swagger UI (enable in all envs for now)
+app.UseSwagger();
+app.UseSwaggerUI();
 
 app.UseCors();
+
+// Localization configuration
+var supportedCultures = new[] { "pt-BR", "en-US" };
+var localizationOptions = new RequestLocalizationOptions
+{
+    DefaultRequestCulture = new RequestCulture("pt-BR"),
+    SupportedCultures = supportedCultures.Select(c => new CultureInfo(c)).ToList(),
+    SupportedUICultures = supportedCultures.Select(c => new CultureInfo(c)).ToList(),
+};
+// Allow query string and header to set culture
+localizationOptions.RequestCultureProviders.Insert(0, new QueryStringRequestCultureProvider());
+app.UseRequestLocalization(localizationOptions);
 
 var api = app.MapGroup("/api");
 
 api.MapGet("/healthz", () => Results.Ok(new { status = "ok" }));
+
+// Example i18n endpoint that returns all resource strings for current culture
+api.MapGet("/i18n", (IStringLocalizer<SharedResources> localizer) =>
+{
+    var strings = localizer
+        .GetAllStrings(includeParentCultures: true)
+        .ToDictionary(s => s.Name, s => s.Value);
+    return Results.Ok(strings);
+}).WithName("GetTranslations");
 
 // Database connectivity health
 api.MapGet("/healthz/db", async (AppDbContext db) =>
@@ -192,4 +227,210 @@ api.MapGet("/anamneses/{id:guid}", async (Guid id, AppDbContext db) =>
     return anam is null ? Results.NotFound() : Results.Ok(anam);
 });
 
+// List anamneses with optional client name filter
+api.MapGet("/anamneses", async (
+    string? q,
+    int? skip,
+    int? take,
+    AppDbContext db) =>
+{
+    var query = db.Anamneses
+        .Include(a => a.Client)
+        .AsQueryable();
+
+    if (!string.IsNullOrWhiteSpace(q))
+    {
+        var qLower = q.Trim().ToLower();
+        query = query.Where(a => a.Client != null && a.Client.FullName.ToLower().Contains(qLower));
+    }
+
+    query = query.OrderByDescending(a => a.CreatedAt);
+
+    int s = Math.Max(0, skip ?? 0);
+    int t = Math.Clamp(take ?? 50, 1, 100);
+
+    var items = await query.Skip(s).Take(t)
+        .Select(a => new
+        {
+            id = a.Id,
+            clientId = a.ClientId,
+            clientName = a.Client != null ? a.Client.FullName : "",
+            formDate = a.FormDate,
+            createdAt = a.CreatedAt
+        })
+        .ToListAsync();
+
+    return Results.Ok(items);
+}).WithName("ListAnamneses");
+
+// Simple current user helper (dev header based)
+static async Task<Anamnese.Api.Models.User?> GetCurrentUser(HttpContext ctx, Anamnese.Api.Data.AppDbContext db)
+{
+    if (ctx.Request.Headers.TryGetValue("X-User-Id", out var h) && Guid.TryParse(h.ToString(), out var id))
+    {
+        return await db.Users.Include(u => u.Profile).FirstOrDefaultAsync(u => u.Id == id);
+    }
+    // fallback to admin
+    return await db.Users.Include(u => u.Profile).FirstOrDefaultAsync(u => u.UserName == "admin");
+}
+
+// Me endpoint
+api.MapGet("/users/me", async (HttpContext ctx, AppDbContext db) =>
+{
+    var me = await GetCurrentUser(ctx, db);
+    if (me is null) return Results.NotFound();
+    return Results.Ok(new
+    {
+        id = me.Id,
+        userName = me.UserName,
+        email = me.Email,
+        isAdmin = me.IsAdmin,
+        profile = new { fullName = me.Profile?.FullName, avatarUrl = me.Profile?.AvatarUrl, locale = me.Profile?.Locale }
+    });
+});
+
+// Profile endpoints
+api.MapGet("/profile", async (HttpContext ctx, AppDbContext db) =>
+{
+    var me = await GetCurrentUser(ctx, db);
+    if (me is null) return Results.Unauthorized();
+    var p = me.Profile;
+    return Results.Ok(new { fullName = p?.FullName, avatarUrl = p?.AvatarUrl, locale = p?.Locale, email = me.Email });
+});
+
+api.MapPut("/profile", async (HttpContext ctx, AppDbContext db, Anamnese.Api.Models.UserProfile input) =>
+{
+    var me = await GetCurrentUser(ctx, db);
+    if (me is null) return Results.Unauthorized();
+    var prof = await db.UserProfiles.FirstOrDefaultAsync(x => x.UserId == me.Id);
+    if (prof is null)
+    {
+        prof = new Anamnese.Api.Models.UserProfile { UserId = me.Id };
+        db.UserProfiles.Add(prof);
+    }
+    prof.FullName = input.FullName;
+    prof.AvatarUrl = input.AvatarUrl;
+    prof.Locale = input.Locale;
+    prof.UpdatedAt = DateTime.UtcNow;
+    await db.SaveChangesAsync();
+    return Results.Ok();
+});
+
+// Admin group with a simple filter
+var admin = api.MapGroup("/admin");
+admin.AddEndpointFilter(async (invocationContext, next) =>
+{
+    var ctx = invocationContext.HttpContext;
+    var db = ctx.RequestServices.GetRequiredService<AppDbContext>();
+    var me = await GetCurrentUser(ctx, db);
+    if (me is null || !me.IsAdmin)
+        return Results.StatusCode(403);
+    return await next(invocationContext);
+});
+
+admin.MapGet("/roles", async (AppDbContext db) =>
+{
+    var roles = await db.Roles
+        .Select(r => new
+        {
+            id = r.Id,
+            name = r.Name,
+            description = r.Description,
+            users = r.UserRoles.Count,
+            accesses = r.RoleAccesses.Count
+        })
+        .ToListAsync();
+    return Results.Ok(roles);
+});
+
+admin.MapGet("/users", async (AppDbContext db) =>
+{
+    var users = await db.Users
+        .Select(u => new { id = u.Id, userName = u.UserName, email = u.Email, isAdmin = u.IsAdmin })
+        .ToListAsync();
+    return Results.Ok(users);
+});
+
+admin.MapPost("/roles", async (AppDbContext db, RoleCreateRequest req) =>
+{
+    if (string.IsNullOrWhiteSpace(req.Name)) return Results.BadRequest(new { error = "Name is required" });
+    var role = new Role { Name = req.Name.Trim(), Description = req.Description };
+    db.Roles.Add(role);
+    await db.SaveChangesAsync();
+    return Results.Created($"/api/admin/roles/{role.Id}", role);
+});
+
+admin.MapGet("/accesses", async (AppDbContext db) =>
+{
+    var list = await db.Accesses.OrderBy(a => a.RoutePattern).Select(a => new
+    {
+        id = a.Id,
+        method = a.HttpMethod,
+        route = a.RoutePattern,
+        active = a.IsActive,
+        name = a.DisplayName
+    }).ToListAsync();
+    return Results.Ok(list);
+});
+
+admin.MapGet("/roles/{roleId:guid}/users", async (Guid roleId, AppDbContext db) =>
+{
+    var users = await db.UserRoles.Where(ur => ur.RoleId == roleId)
+        .Select(ur => new { id = ur.User.Id, userName = ur.User.UserName, email = ur.User.Email })
+        .ToListAsync();
+    return Results.Ok(users);
+});
+
+admin.MapPost("/roles/{roleId:guid}/users/{userId:guid}", async (Guid roleId, Guid userId, AppDbContext db) =>
+{
+    var exists = await db.UserRoles.AnyAsync(ur => ur.RoleId == roleId && ur.UserId == userId);
+    if (!exists) db.UserRoles.Add(new UserRole { RoleId = roleId, UserId = userId });
+    await db.SaveChangesAsync();
+    return Results.Ok();
+});
+
+admin.MapDelete("/roles/{roleId:guid}/users/{userId:guid}", async (Guid roleId, Guid userId, AppDbContext db) =>
+{
+    var rel = await db.UserRoles.FirstOrDefaultAsync(ur => ur.RoleId == roleId && ur.UserId == userId);
+    if (rel is not null) db.UserRoles.Remove(rel);
+    await db.SaveChangesAsync();
+    return Results.Ok();
+});
+
+admin.MapGet("/roles/{roleId:guid}/accesses", async (Guid roleId, AppDbContext db) =>
+{
+    var list = await db.RoleAccesses.Where(ra => ra.RoleId == roleId)
+        .Select(ra => new { id = ra.Access.Id, method = ra.Access.HttpMethod, route = ra.Access.RoutePattern, active = ra.Access.IsActive })
+        .ToListAsync();
+    return Results.Ok(list);
+});
+
+admin.MapPost("/roles/{roleId:guid}/accesses/{accessId:guid}", async (Guid roleId, Guid accessId, AppDbContext db) =>
+{
+    var exists = await db.RoleAccesses.AnyAsync(ra => ra.RoleId == roleId && ra.AccessId == accessId);
+    if (!exists) db.RoleAccesses.Add(new RoleAccess { RoleId = roleId, AccessId = accessId });
+    await db.SaveChangesAsync();
+    return Results.Ok();
+});
+
+admin.MapDelete("/roles/{roleId:guid}/accesses/{accessId:guid}", async (Guid roleId, Guid accessId, AppDbContext db) =>
+{
+    var rel = await db.RoleAccesses.FirstOrDefaultAsync(ra => ra.RoleId == roleId && ra.AccessId == accessId);
+    if (rel is not null) db.RoleAccesses.Remove(rel);
+    await db.SaveChangesAsync();
+    return Results.Ok();
+});
+
+// Sync accesses and seed admin
+await AccessSyncService.SyncAsync(app);
+
+// Manual resync endpoint (admin only)
+admin.MapPost("/accesses/resync", async (HttpContext ctx) =>
+{
+    await AccessSyncService.SyncAsync(ctx.RequestServices);
+    return Results.Ok(new { ok = true });
+});
+
 app.Run();
+
+public record RoleCreateRequest(string Name, string? Description);
