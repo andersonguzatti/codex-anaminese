@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.Text.Json.Serialization;
 
 namespace Anamnese.Api.Models;
 
@@ -52,5 +53,6 @@ public class Client
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
 
+    [JsonIgnore]
     public ICollection<Anamnesis> Anamneses { get; set; } = new List<Anamnesis>();
 }

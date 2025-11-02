@@ -9,6 +9,7 @@ using System.Globalization;
 using Microsoft.AspNetCore.Routing;
 using Anamnese.Api.Services;
 using Microsoft.OpenApi.Models;
+using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -24,6 +25,13 @@ builder.Services.AddSwaggerGen(c =>
     });
 });
 builder.Services.AddLocalization(options => options.ResourcesPath = "Resources");
+
+// System.Text.Json: avoid serialization cycles when returning EF graphs
+builder.Services.ConfigureHttpJsonOptions(options =>
+{
+    options.SerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
+    options.SerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
+});
 
 builder.Services.AddCors(options =>
 {
