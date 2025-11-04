@@ -106,9 +106,39 @@ export async function createIntake(payload: {
   client: ClientInput
   anamnesis: AnamnesisInput
   signatureDataUrl: string
+  clientId?: string | null
 }) {
   const { data } = await api.post('/api/intakes', payload)
   return data as { clientId: string; anamnesisId: string }
+}
+
+// Client search and fetch
+export type ClientSummary = {
+  id: string
+  fullName: string
+  birthDate?: string | null
+  sex?: string | null
+  maritalStatus?: string | null
+  addressStreet?: string | null
+  addressNumber?: string | null
+  neighborhood?: string | null
+  city?: string | null
+  postalCode?: string | null
+  email?: string | null
+  profession?: string | null
+  homePhone?: string | null
+  mobilePhone?: string | null
+  lastAnamnesisAt?: string | null
+}
+
+export async function searchClients(params: { q: string; take?: number }) {
+  const { data } = await api.get('/api/clients', { params })
+  return data as ClientSummary[]
+}
+
+export async function getClient(id: string) {
+  const { data } = await api.get(`/api/clients/${id}`)
+  return data as ClientSummary
 }
 
 export type AnamnesisListItem = {

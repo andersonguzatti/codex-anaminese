@@ -81,7 +81,8 @@ public record AnamnesisInput(
 public record CreateIntakeRequest(
     ClientInput Client,
     AnamnesisInput Anamnesis,
-    string SignatureDataUrl
+    string SignatureDataUrl,
+    Guid? ClientId
 );
 
 public record CreateIntakeResponse(

@@ -6,3 +6,10 @@ html, body, #root {
   height: 100%;
 }
 
+/* Print only the details container */
+@media print {
+  body * { visibility: hidden !important; }
+  #printable, #printable * { visibility: visible !important; }
+  #printable { position: absolute; left: 0; top: 0; width: 100%; margin: 0; padding: 0; box-shadow: none !important; }
+}
+

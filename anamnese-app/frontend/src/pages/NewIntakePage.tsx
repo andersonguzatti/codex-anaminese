@@ -2,8 +2,9 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import MaskedDateInput from '../components/MaskedDateInput'
+import { formatDateTimeLocal } from '../lib/date'
 import SignatureCanvas from '../components/SignatureCanvas'
-import { createIntake, type AnamnesisInput, type ClientInput } from '../lib/api'
+import { createIntake, searchClients, type AnamnesisInput, type ClientInput, type ClientSummary } from '../lib/api'
 
 function toDateOnlyMasked(value: string | undefined, lang: string) {
   if (!value) return null
@@ -32,10 +33,44 @@ export default function NewIntakePage() {
   const [error, setError] = useState<string | null>(null)
   const [successId, setSuccessId] = useState<string | null>(null)
   const [countdown, setCountdown] = useState<number>(7)
+  const [selectedClient, setSelectedClient] = useState<ClientSummary | null>(null)
+  const [q, setQ] = useState('')
+  const [results, setResults] = useState<ClientSummary[]>([])
+  const [formKey, setFormKey] = useState<string>('new')
   const navigate = useNavigate()
   useAutoRedirect(successId, countdown, setCountdown, (to: string) => navigate(to))
 
   const formRef = useRef<HTMLFormElement>(null)
+
+  // Preenche os campos do formulário quando um cliente é selecionado
+  useEffect(() => {
+    if (!formRef.current) return
+    const f = formRef.current
+    const set = (name: string, value: any) => {
+      const el = f.elements.namedItem(name) as HTMLInputElement | null
+      if (el) el.value = value ?? ''
+    }
+    if (selectedClient) {
+      set('fullName', selectedClient.fullName)
+      // birthDate vem como yyyy-MM-dd
+      if (selectedClient.birthDate) {
+        const [y, mm, dd] = String(selectedClient.birthDate).split('-')
+        const isPt = i18n.language.toLowerCase().startsWith('pt')
+        set('birthDate', isPt ? `${dd}/${mm}/${y}` : `${mm}/${dd}/${y}`)
+      }
+      set('sex', selectedClient.sex)
+      set('maritalStatus', selectedClient.maritalStatus)
+      set('addressStreet', selectedClient.addressStreet)
+      set('addressNumber', selectedClient.addressNumber)
+      set('neighborhood', selectedClient.neighborhood)
+      set('city', selectedClient.city)
+      set('postalCode', selectedClient.postalCode)
+      set('email', selectedClient.email)
+      set('profession', selectedClient.profession)
+      set('homePhone', selectedClient.homePhone)
+      set('mobilePhone', selectedClient.mobilePhone)
+    }
+  }, [selectedClient, i18n.language])
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -132,11 +167,15 @@ export default function NewIntakePage() {
 
     try {
       setLoading(true)
-      const res = await createIntake({ client, anamnesis, signatureDataUrl: signature })
+      const res = await createIntake({ client, anamnesis, signatureDataUrl: signature, clientId: selectedClient?.id })
       setSuccessId(res.anamnesisId)
       setCountdown(7)
       formRef.current?.reset()
       setSignature(null)
+      setSelectedClient(null)
+      setQ('')
+      setResults([])
+      setFormKey('new-' + Date.now())
     } catch (err: any) {
       console.error(err)
       setError(err?.response?.data?.error || 'Falha ao enviar os dados')
@@ -178,6 +217,73 @@ export default function NewIntakePage() {
       )}
 
       <form ref={formRef} onSubmit={onSubmit} className="space-y-6">
+        {/* Busca e seleção de cliente existente */}
+        <section>
+          <h3 className="font-medium text-gray-900 mb-3">Cliente</h3>
+          <div className="relative max-w-xl">
+            <input
+              type="text"
+              value={q}
+              onChange={async (e) => {
+                const v = e.target.value
+                setQ(v)
+                if ((v || '').trim().length >= 2) {
+                  try {
+                    const r = await searchClients({ q: v, take: 8 })
+                    setResults(r)
+                  } catch { setResults([]) }
+                } else {
+                  setResults([])
+                }
+              }}
+              placeholder="Pesquisar cliente por nome..."
+              className={fieldClass}
+            />
+            {(q.trim().length >= 2) && (
+              <div className="absolute z-10 mt-1 w-full bg-white border rounded shadow-sm max-h-72 overflow-auto">
+                {results.map((c) => (
+                  <button
+                    type="button"
+                    key={c.id}
+                    className="w-full text-left px-3 py-2 hover:bg-gray-50"
+                    onClick={() => {
+                      setSelectedClient(c)
+                      setQ(c.fullName)
+                      setResults([])
+                    }}
+                  >
+                    <div className="flex flex-col">
+                      <span className="font-medium">{c.fullName}</span>
+                      <span className="text-xs text-gray-500">
+                        {c.mobilePhone ? `${c.mobilePhone}` : '—'}
+                        {c.lastAnamnesisAt ? ` • ${formatDateTimeLocal(c.lastAnamnesisAt, i18n.language)}` : ''}
+                        {c.city ? ` • ${c.city}` : ''}
+                      </span>
+                    </div>
+                  </button>
+                ))}
+                {results.length === 0 && (
+                  <div className="px-3 py-2 text-sm text-gray-600">Nenhuma cliente encontrada.</div>
+                )}
+                <div className="border-t">
+                  <button
+                    type="button"
+                    className="w-full text-left px-3 py-2 hover:bg-gray-50"
+                    onClick={() => {
+                      setSelectedClient(null)
+                      setQ('')
+                      setResults([])
+                      formRef.current?.reset()
+                    }}
+                  >
+                    Cadastrar nova cliente
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+          <div className="h-px bg-gray-200 my-4" />
+        </section>
         <section>
           <h3 className="font-medium text-gray-900 mb-3">Dados Pessoais</h3>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

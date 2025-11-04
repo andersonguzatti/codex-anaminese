@@ -120,36 +120,61 @@ api.MapGet("/healthz/db", async (AppDbContext db) =>
     }
 });
 
-// Create intake (client + anamnesis + signature)
+// Create intake (client + anamnesis + signature). If ClientId is provided, update existing client and link.
 api.MapPost("/intakes", async (CreateIntakeRequest req, AppDbContext db) =>
 {
     if (string.IsNullOrWhiteSpace(req.Client.FullName))
         return Results.BadRequest(new { error = "FullName is required" });
     if (string.IsNullOrWhiteSpace(req.SignatureDataUrl))
         return Results.BadRequest(new { error = "Signature is required" });
-
-    var client = new Client
+    Client client;
+    if (req.ClientId.HasValue)
     {
-        Id = Guid.NewGuid(),
-        FullName = req.Client.FullName.Trim(),
-        BirthDate = req.Client.BirthDate,
-        Sex = req.Client.Sex,
-        MaritalStatus = req.Client.MaritalStatus,
-        AddressStreet = req.Client.AddressStreet,
-        AddressNumber = req.Client.AddressNumber,
-        Neighborhood = req.Client.Neighborhood,
-        City = req.Client.City,
-        PostalCode = req.Client.PostalCode,
-        Email = req.Client.Email,
-        Profession = req.Client.Profession,
-        HomePhone = req.Client.HomePhone,
-        MobilePhone = req.Client.MobilePhone,
-        CreatedAt = DateTime.UtcNow,
-        UpdatedAt = DateTime.UtcNow
-    };
-
-    await db.Clients.AddAsync(client);
-    await db.SaveChangesAsync();
+        var existing = await db.Clients.FirstOrDefaultAsync(c => c.Id == req.ClientId.Value);
+        if (existing is null)
+            return Results.NotFound(new { error = "Client not found" });
+        client = existing;
+        // Update existing client with provided data
+        client.FullName = req.Client.FullName.Trim();
+        client.BirthDate = req.Client.BirthDate;
+        client.Sex = req.Client.Sex;
+        client.MaritalStatus = req.Client.MaritalStatus;
+        client.AddressStreet = req.Client.AddressStreet;
+        client.AddressNumber = req.Client.AddressNumber;
+        client.Neighborhood = req.Client.Neighborhood;
+        client.City = req.Client.City;
+        client.PostalCode = req.Client.PostalCode;
+        client.Email = req.Client.Email;
+        client.Profession = req.Client.Profession;
+        client.HomePhone = req.Client.HomePhone;
+        client.MobilePhone = req.Client.MobilePhone;
+        client.UpdatedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync();
+    }
+    else
+    {
+        client = new Client
+        {
+            Id = Guid.NewGuid(),
+            FullName = req.Client.FullName.Trim(),
+            BirthDate = req.Client.BirthDate,
+            Sex = req.Client.Sex,
+            MaritalStatus = req.Client.MaritalStatus,
+            AddressStreet = req.Client.AddressStreet,
+            AddressNumber = req.Client.AddressNumber,
+            Neighborhood = req.Client.Neighborhood,
+            City = req.Client.City,
+            PostalCode = req.Client.PostalCode,
+            Email = req.Client.Email,
+            Profession = req.Client.Profession,
+            HomePhone = req.Client.HomePhone,
+            MobilePhone = req.Client.MobilePhone,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+        await db.Clients.AddAsync(client);
+        await db.SaveChangesAsync();
+    }
 
     var anamnesis = new Anamnesis
     {
@@ -222,6 +247,45 @@ api.MapPost("/intakes", async (CreateIntakeRequest req, AppDbContext db) =>
 
     return Results.Created($"/api/anamneses/{anamnesis.Id}", new CreateIntakeResponse(client.Id, anamnesis.Id));
 }).WithName("CreateIntake");
+
+// Search clients by name (substring)
+api.MapGet("/clients", async (string? q, int? take, AppDbContext db) =>
+{
+    var query = db.Clients.AsQueryable();
+    if (!string.IsNullOrWhiteSpace(q))
+    {
+        var ql = q.Trim().ToLower();
+        query = query.Where(c => c.FullName.ToLower().Contains(ql));
+    }
+    int t = Math.Clamp(take ?? 10, 1, 100);
+    var list = await query
+        .OrderBy(c => c.FullName)
+        .Take(t)
+        .Select(c => new
+        {
+            id = c.Id,
+            fullName = c.FullName,
+            birthDate = c.BirthDate,
+            sex = c.Sex,
+            maritalStatus = c.MaritalStatus,
+            addressStreet = c.AddressStreet,
+            addressNumber = c.AddressNumber,
+            neighborhood = c.Neighborhood,
+            city = c.City,
+            postalCode = c.PostalCode,
+            email = c.Email,
+            profession = c.Profession,
+            homePhone = c.HomePhone,
+            mobilePhone = c.MobilePhone,
+            lastAnamnesisAt = db.Anamneses
+                .Where(a => a.ClientId == c.Id)
+                .OrderByDescending(a => a.CreatedAt)
+                .Select(a => a.CreatedAt)
+                .FirstOrDefault()
+        })
+        .ToListAsync();
+    return Results.Ok(list);
+}).WithName("SearchClients");
 
 api.MapGet("/clients/{id:guid}", async (Guid id, AppDbContext db) =>
 {
